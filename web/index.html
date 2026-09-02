@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mixtape</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Mixtape</h1>
+      <p class="sub">Turn a YouTube playlist into a folder of 320&nbsp;kbps MP3s.</p>
+    </header>
+
+    <div id="ffmpeg-warning" class="banner hidden">
+      <strong>ffmpeg not found.</strong>
+      Downloads will fail at the conversion step. Install it with
+      <code>winget install Gyan.FFmpeg</code>, then restart this app.
+    </div>
+
+    <form id="job-form">
+      <label for="url">Playlist URL</label>
+      <input id="url" name="url" type="text" required
+             placeholder="https://www.youtube.com/playlist?list=..."
+             autocomplete="off" spellcheck="false">
+
+      <label for="output">Save to folder</label>
+      <input id="output" name="output" type="text" autocomplete="off" spellcheck="false">
+
+      <div class="actions">
+        <button id="start" type="submit">Start</button>
+        <button id="cancel" type="button" class="secondary hidden">Cancel</button>
+        <span id="status" class="status"></span>
+      </div>
+    </form>
+
+    <div id="error" class="banner error hidden"></div>
+
+    <section id="results" class="hidden">
+      <div class="playlist-head">
+        <h2 id="playlist-title"></h2>
+        <span id="counts" class="counts"></span>
+      </div>
+      <ul id="tracks"></ul>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
