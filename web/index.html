@@ -11,9 +11,14 @@
 <body>
   <main>
     <header>
-      <div class="logo" aria-hidden="true"></div>
-      <h1>Mixtape</h1>
-      <p class="sub">Turn a YouTube playlist into a folder of 320&nbsp;kbps MP3s.</p>
+      <div class="brand">
+        <div class="logo" aria-hidden="true"></div>
+        <div class="brand-text">
+          <h1>Mixtape</h1>
+          <p class="sub">Turn a YouTube playlist into a folder of 320&nbsp;kbps MP3s.</p>
+        </div>
+      </div>
+      <div class="header-accent" aria-hidden="true"></div>
     </header>
 
     <div id="ffmpeg-warning" class="banner hidden">
@@ -25,20 +30,37 @@
     <form id="job-form">
       <label for="url">Playlist URL</label>
       <input id="url" name="url" type="text" required
-             placeholder="https://www.youtube.com/playlist?list=..."
+             placeholder="https://www.youtube.com/playlist?list=... or https://youtu.be/..."
              autocomplete="off" spellcheck="false">
 
       <label for="output">Save to folder</label>
       <input id="output" name="output" type="text" autocomplete="off" spellcheck="false">
 
       <div class="actions">
-        <button id="start" type="submit">Start</button>
+        <button id="fetch-btn" type="button">Fetch Tracks</button>
+        <button id="start" type="submit" class="hidden">Start Download</button>
         <button id="cancel" type="button" class="secondary hidden">Cancel</button>
+        <button id="back-btn" type="button" class="secondary hidden">Back</button>
         <span id="status" class="status"></span>
       </div>
     </form>
 
     <div id="error" class="banner error hidden"></div>
+
+    <section id="selection" class="hidden">
+      <div class="selection-head">
+        <h2 id="selection-title"></h2>
+        <div class="selection-actions">
+          <button id="select-all" type="button" class="secondary">Select All</button>
+          <button id="deselect-all" type="button" class="secondary">Deselect All</button>
+        </div>
+      </div>
+      <ul id="selection-tracks"></ul>
+      <div class="selection-footer">
+        <span id="selection-count" class="status"></span>
+        <button id="download-selected" type="button" disabled>Download Selected (<span id="selected-count">0</span>)</button>
+      </div>
+    </section>
 
     <section id="results" class="hidden">
       <div class="playlist-head">

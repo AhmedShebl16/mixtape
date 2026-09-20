@@ -1,14 +1,24 @@
 const form = document.getElementById("job-form");
 const urlInput = document.getElementById("url");
 const outputInput = document.getElementById("output");
+const fetchBtn = document.getElementById("fetch-btn");
 const startBtn = document.getElementById("start");
 const cancelBtn = document.getElementById("cancel");
+const backBtn = document.getElementById("back-btn");
 const statusEl = document.getElementById("status");
 const errorEl = document.getElementById("error");
 const resultsEl = document.getElementById("results");
+const selectionEl = document.getElementById("selection");
 const titleEl = document.getElementById("playlist-title");
 const countsEl = document.getElementById("counts");
 const tracksEl = document.getElementById("tracks");
+const selectionTitleEl = document.getElementById("selection-title");
+const selectionTracksEl = document.getElementById("selection-tracks");
+const selectAllBtn = document.getElementById("select-all");
+const deselectAllBtn = document.getElementById("deselect-all");
+const downloadSelectedBtn = document.getElementById("download-selected");
+const selectedCountEl = document.getElementById("selected-count");
+const selectionCountEl = document.getElementById("selection-count");
 const ffmpegWarning = document.getElementById("ffmpeg-warning");
 
 const LABELS = {
@@ -23,6 +33,8 @@ const LABELS = {
 let stream = null;
 let jobId = null;
 let rows = new Map();
+let selectionTracks = [];
+let selectedIndices = new Set();
 
 fetch("/api/config")
   .then((r) => r.json())
@@ -40,6 +52,87 @@ function showError(message) {
 function clearError() {
   errorEl.textContent = "";
   errorEl.classList.add("hidden");
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return "";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function buildSelectionRow(track) {
+  const li = document.createElement("li");
+  li.className = "selection-track";
+  li.dataset.index = track.index;
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = track.available;
+  checkbox.disabled = !track.available;
+  checkbox.addEventListener("change", () => toggleSelection(track.index, checkbox.checked));
+
+  const num = document.createElement("span");
+  num.className = "num";
+  num.textContent = String(track.index).padStart(2, "0");
+
+  const title = document.createElement("div");
+  title.className = "title";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = track.title;
+  name.title = track.title;
+  if (!track.available) {
+    name.style.color = "var(--muted)";
+    name.textContent += " (unavailable)";
+  }
+  title.append(name);
+
+  const duration = document.createElement("span");
+  duration.className = "duration";
+  duration.textContent = formatDuration(track.duration);
+
+  li.append(checkbox, num, title, duration);
+
+  if (!track.available) {
+    li.classList.add("unavailable");
+  }
+
+  return li;
+}
+
+function toggleSelection(index, checked) {
+  if (checked) {
+    selectedIndices.add(index);
+  } else {
+    selectedIndices.delete(index);
+  }
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  const count = selectedIndices.size;
+  selectedCountEl.textContent = count;
+  selectionCountEl.textContent = `${count} of ${selectionTracks.length} selected`;
+  downloadSelectedBtn.disabled = count === 0;
+
+  for (const li of selectionTracksEl.querySelectorAll(".selection-track")) {
+    const index = parseInt(li.dataset.index, 10);
+    const checkbox = li.querySelector("input[type=checkbox]");
+    checkbox.checked = selectedIndices.has(index);
+  }
+}
+
+function selectAll() {
+  for (const track of selectionTracks) {
+    if (track.available) selectedIndices.add(track.index);
+  }
+  updateSelectionUI();
+}
+
+function deselectAll() {
+  selectedIndices.clear();
+  updateSelectionUI();
 }
 
 function buildRow(track) {
@@ -120,6 +213,7 @@ function finish(ev) {
   }
   startBtn.disabled = false;
   cancelBtn.classList.add("hidden");
+  backBtn.classList.add("hidden");
   updateCounts();
 
   if (ev.status === "cancelled") {
@@ -147,22 +241,136 @@ function listen(id) {
       statusEl.textContent = "Connection to the downloader was lost.";
       startBtn.disabled = false;
       cancelBtn.classList.add("hidden");
+      backBtn.classList.add("hidden");
     }
   };
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  clearError();
+function showSelection(data) {
+  selectionTracks = data.tracks;
+  selectedIndices.clear();
+  for (const track of selectionTracks) {
+    if (track.available) selectedIndices.add(track.index);
+  }
 
-  startBtn.disabled = true;
-  statusEl.textContent = "Reading playlist\u2026";
+  selectionTitleEl.textContent = data.playlist_title;
+  selectionTracksEl.replaceChildren();
+  for (const track of selectionTracks) {
+    selectionTracksEl.append(buildSelectionRow(track));
+  }
+
+  updateSelectionUI();
+
+  form.classList.add("hidden");
+  selectionEl.classList.remove("hidden");
+  resultsEl.classList.add("hidden");
+  statusEl.textContent = "";
+}
+
+function showResults(data) {
+  jobId = data.job_id;
+  rows = new Map();
+  tracksEl.replaceChildren();
+  titleEl.textContent = data.playlist_title;
+  for (const track of data.tracks) tracksEl.append(buildRow(track));
+
+  selectionEl.classList.add("hidden");
+  resultsEl.classList.remove("hidden");
+  cancelBtn.classList.remove("hidden");
+  backBtn.classList.remove("hidden");
+  statusEl.textContent = "Saving to " + data.output_dir;
+  updateCounts();
+  listen(jobId);
+}
+
+function resetToForm() {
+  selectionEl.classList.add("hidden");
+  resultsEl.classList.add("hidden");
+  form.classList.remove("hidden");
+  fetchBtn.classList.remove("hidden");
+  startBtn.classList.add("hidden");
+  cancelBtn.classList.add("hidden");
+  backBtn.classList.add("hidden");
+  statusEl.textContent = "";
+  clearError();
+}
+
+fetchBtn.addEventListener("click", async () => {
+  clearError();
+  fetchBtn.disabled = true;
+  statusEl.textContent = "Fetching tracks\u2026";
+
+  try {
+    const response = await fetch("/api/probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: urlInput.value }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not fetch playlist.");
+    showSelection(data);
+  } catch (err) {
+    fetchBtn.disabled = false;
+    statusEl.textContent = "";
+    showError(err.message);
+    return;
+  }
+
+  fetchBtn.disabled = false;
+  statusEl.textContent = "";
+});
+
+backBtn.addEventListener("click", () => {
   if (stream) {
     stream.close();
     stream = null;
   }
+  jobId = null;
+  rows.clear();
+  selectionTracks = [];
+  selectedIndices.clear();
+  resetToForm();
+});
 
-  let data;
+selectAllBtn.addEventListener("click", selectAll);
+deselectAllBtn.addEventListener("click", deselectAll);
+
+downloadSelectedBtn.addEventListener("click", async () => {
+  if (selectedIndices.size === 0) return;
+
+  downloadSelectedBtn.disabled = true;
+  statusEl.textContent = "Starting download\u2026";
+  clearError();
+
+  try {
+    const response = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: urlInput.value,
+        output_dir: outputInput.value.trim() || null,
+        track_indices: Array.from(selectedIndices).sort((a, b) => a - b),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not start the download.");
+    showResults(data);
+  } catch (err) {
+    downloadSelectedBtn.disabled = false;
+    statusEl.textContent = "";
+    showError(err.message);
+    return;
+  }
+});
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (startBtn.classList.contains("hidden")) return;
+
+  clearError();
+  startBtn.disabled = true;
+  statusEl.textContent = "Starting download\u2026";
+
   try {
     const response = await fetch("/api/jobs", {
       method: "POST",
@@ -172,26 +380,15 @@ form.addEventListener("submit", async (event) => {
         output_dir: outputInput.value.trim() || null,
       }),
     });
-    data = await response.json();
+    const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not start the download.");
+    showResults(data);
   } catch (err) {
     startBtn.disabled = false;
     statusEl.textContent = "";
     showError(err.message);
     return;
   }
-
-  jobId = data.job_id;
-  rows = new Map();
-  tracksEl.replaceChildren();
-  titleEl.textContent = data.playlist_title;
-  for (const track of data.tracks) tracksEl.append(buildRow(track));
-
-  resultsEl.classList.remove("hidden");
-  cancelBtn.classList.remove("hidden");
-  statusEl.textContent = "Saving to " + data.output_dir;
-  updateCounts();
-  listen(jobId);
 });
 
 cancelBtn.addEventListener("click", async () => {

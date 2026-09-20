@@ -19,6 +19,15 @@ TrackStatus = str
 
 
 @dataclass
+class ProbeTrack:
+    index: int
+    video_id: str
+    title: str
+    duration: int = 0
+    available: bool = True
+
+
+@dataclass
 class Track:
     index: int
     video_id: str

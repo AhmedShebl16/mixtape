@@ -18,7 +18,7 @@ from typing import Any
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
-from .jobs import Job, Track
+from .jobs import Job, Track, ProbeTrack
 
 # Three at a time is a deliberate ceiling: more parallelism invites throttling
 # and 429s from YouTube, which slows the run down rather than speeding it up.
@@ -46,7 +46,25 @@ class Cancelled(Exception):
 
 
 def probe(url: str) -> tuple[str, list[Track]]:
-    """List a playlist's videos without downloading anything."""
+    """List a playlist's videos without downloading anything. Returns Track objects for job creation."""
+    playlist_title, probe_tracks = _probe_raw(url)
+    tracks = [
+        Track(index=t.index, video_id=t.video_id, title=t.title)
+        for t in probe_tracks
+    ]
+    return playlist_title, tracks
+
+
+def probe_for_ui(url: str) -> tuple[str, bool, list[ProbeTrack]]:
+    """Probe for UI selection: returns (playlist_title, is_playlist, probe_tracks_with_duration)."""
+    playlist_title, probe_tracks = _probe_raw(url)
+    is_playlist = len(probe_tracks) > 1 or (len(probe_tracks) == 1 and probe_tracks[0].video_id != "")
+    # For single video, we still want to show it in selection
+    return playlist_title, is_playlist, probe_tracks
+
+
+def _probe_raw(url: str) -> tuple[str, list[ProbeTrack]]:
+    """Internal probe returning ProbeTrack with duration."""
     opts = {
         "extract_flat": "in_playlist",
         "quiet": True,
@@ -67,22 +85,33 @@ def probe(url: str) -> tuple[str, list[Track]]:
     else:
         playlist_title = info.get("title") or "Playlist"
 
-    tracks: list[Track] = []
+    probe_tracks: list[ProbeTrack] = []
     for position, entry in enumerate(entries, start=1):
         if not entry:
             # Deleted/private entries can come back as None.
+            probe_tracks.append(
+                ProbeTrack(
+                    index=position,
+                    video_id="",
+                    title="(unavailable)",
+                    duration=0,
+                    available=False,
+                )
+            )
             continue
-        tracks.append(
-            Track(
+        probe_tracks.append(
+            ProbeTrack(
                 index=position,
                 video_id=entry.get("id") or "",
                 title=entry.get("title") or "(untitled)",
+                duration=entry.get("duration") or 0,
+                available=bool(entry.get("id")),
             )
         )
 
-    if not tracks:
+    if not probe_tracks:
         raise ValueError("That playlist has no playable videos.")
-    return playlist_title, tracks
+    return playlist_title, probe_tracks
 
 
 def _fmt_speed(bytes_per_sec: float | None) -> str:

@@ -28,6 +28,11 @@ app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 class NewJob(BaseModel):
     url: str
     output_dir: str | None = None
+    track_indices: list[int] | None = None
+
+
+class ProbeRequest(BaseModel):
+    url: str
 
 
 @app.get("/")
@@ -44,6 +49,37 @@ async def config() -> dict:
     }
 
 
+@app.post("/api/probe")
+async def probe_playlist(payload: ProbeRequest) -> dict:
+    """Probe a playlist/video URL and return tracks with metadata for selection."""
+    url = payload.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Enter a YouTube URL.")
+
+    loop = asyncio.get_running_loop()
+    try:
+        playlist_title, is_playlist, probe_tracks = await loop.run_in_executor(
+            None, downloader.probe_for_ui, url
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=downloader._clean_error(str(exc))) from exc
+
+    return {
+        "playlist_title": playlist_title,
+        "is_playlist": is_playlist,
+        "tracks": [
+            {
+                "index": t.index,
+                "video_id": t.video_id,
+                "title": t.title,
+                "duration": t.duration,
+                "available": t.available,
+            }
+            for t in probe_tracks
+        ],
+    }
+
+
 @app.post("/api/jobs")
 async def create_job(payload: NewJob) -> dict:
     url = payload.url.strip()
@@ -52,9 +88,18 @@ async def create_job(payload: NewJob) -> dict:
 
     loop = asyncio.get_running_loop()
     try:
-        playlist_title, tracks = await loop.run_in_executor(None, downloader.probe, url)
+        playlist_title, all_tracks = await loop.run_in_executor(None, downloader.probe, url)
     except Exception as exc:  # noqa: BLE001 - surface the reason to the UI
         raise HTTPException(status_code=400, detail=downloader._clean_error(str(exc))) from exc
+
+    # Filter tracks if track_indices provided
+    if payload.track_indices:
+        selected_indices = set(payload.track_indices)
+        tracks = [t for t in all_tracks if t.index in selected_indices]
+        if not tracks:
+            raise HTTPException(status_code=400, detail="No valid tracks selected.")
+    else:
+        tracks = all_tracks
 
     output_dir = Path(payload.output_dir).expanduser() if payload.output_dir else DEFAULT_OUTPUT
     try:
