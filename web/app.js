@@ -320,6 +320,14 @@ fetchBtn.addEventListener("click", async () => {
   statusEl.textContent = "";
 });
 
+// Enter key in URL input triggers Fetch Tracks when in initial state
+urlInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !fetchBtn.classList.contains("hidden")) {
+    e.preventDefault();
+    fetchBtn.click();
+  }
+});
+
 backBtn.addEventListener("click", () => {
   if (stream) {
     stream.close();
