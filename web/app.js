@@ -373,7 +373,10 @@ downloadSelectedBtn.addEventListener("click", async () => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (startBtn.classList.contains("hidden")) return;
+  // Only handle submit when Start Download is visible (not in initial fetch state)
+  if (startBtn.classList.contains("hidden") || fetchBtn.classList.contains("hidden") === false) {
+    return;
+  }
 
   clearError();
   startBtn.disabled = true;
